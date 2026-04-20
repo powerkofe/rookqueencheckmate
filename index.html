@@ -713,70 +713,61 @@ function gameStatus(pos) {
   return inCheck ? 'check' : 'ongoing';
 }
 
-/* ---------- Escape territory (the king's "box") ----------
-   Count the squares the Black king is confined to. The rook/queen creates
-   "walls" along the squares it attacks — the king cannot step onto an attacked
-   square, so those rays form barriers. We flood-fill from the king's current
-   square through all squares that are:
-     - not attacked by the White rook/queen (can't step into check)
-     - not attacked by the White king (two kings rule)
-     - not occupied by a White piece that's defended
-   This correctly gives "the box the king is pressed into" because the king
-   can't cross the rays that wall it off. For a rook on g4 with king on h8,
-   the rays are the g-file and 4th rank — the king's flood-fill can only
-   reach h5-h8 (the h-file above rank 4).
+/* ---------- Escape territory (immediate pressure) ----------
+   Count the squares the Black king can reach within 3 moves. This captures
+   "immediate pressure" — the box the king feels pressed into right now —
+   rather than eventual reachability across the whole board.
 
-   Key insight: we include the king's CURRENT square in the count, and the
-   rays of the rook/queen act as boundaries that the flood-fill cannot cross.
+   Why 3 moves: it's big enough to see the full extent of a rook-cut corner
+   box (like Rg4/Kh8 → 4 squares h5-h8) but small enough that when only the
+   White king is doing the pressing (no rook cut yet), the count reflects
+   local pressure instead of "king could eventually walk to the other side."
+
+   Walls: squares attacked by any White piece, and squares occupied by any
+   White piece (the rook/queen is treated as a barrier, not a capture target).
 */
 function getReachableSquares(pos, excludeCurrent = false) {
+  const HORIZON = 3;
   const kingPos = findPiece(pos.board, 'k');
   if (!kingPos) return new Set();
   const board = pos.board;
-
-  // Attacked squares by White (rook/queen + White king).
-  // These are the "walls" the Black king cannot step onto.
   const whiteAttacks = squaresAttackedBy(board, 'w');
 
   const isAccessible = (r, c) => {
     if (!inBounds(r, c)) return false;
-    // Can't step onto a square attacked by any White piece.
     if (whiteAttacks[r][c]) return false;
     const piece = board[r][c];
-    // Treat ALL White pieces' squares as walls for territory purposes.
-    // Even an undefended rook/queen is a barrier — the whole point of training
-    // is to see "the box," not to count squares reachable by capturing.
     if (piece && colorOf(piece) === 'w') return false;
     return true;
   };
 
-  // BFS from the king's current square. King's own square is always included,
-  // even if it happens to be "attacked" in some weird way (shouldn't happen in legal positions).
   const reachable = new Set();
   const startKey = `${kingPos[0]},${kingPos[1]}`;
   reachable.add(startKey);
-  const queue = [kingPos];
-  while (queue.length) {
-    const [r, c] = queue.shift();
-    for (let dr = -1; dr <= 1; dr++) {
-      for (let dc = -1; dc <= 1; dc++) {
-        if (dr === 0 && dc === 0) continue;
-        const nr = r + dr, nc = c + dc;
-        const key = `${nr},${nc}`;
-        if (reachable.has(key)) continue;
-        if (!isAccessible(nr, nc)) continue;
-        reachable.add(key);
-        queue.push([nr, nc]);
+  let frontier = [kingPos];
+  for (let depth = 1; depth <= HORIZON; depth++) {
+    const next = [];
+    for (const [r, c] of frontier) {
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const nr = r + dr, nc = c + dc;
+          const key = `${nr},${nc}`;
+          if (reachable.has(key)) continue;
+          if (!isAccessible(nr, nc)) continue;
+          reachable.add(key);
+          next.push([nr, nc]);
+        }
       }
     }
+    frontier = next;
+    if (frontier.length === 0) break;
   }
   if (excludeCurrent) reachable.delete(startKey);
   return reachable;
 }
 
 function countEscapeSquares(pos) {
-  // Include the king's current square — "4 squares of territory" naturally means
-  // "the king has 4 squares it can occupy," which matches chess training intuition.
   return getReachableSquares(pos, false).size;
 }
 
