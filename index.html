@@ -742,17 +742,11 @@ function getReachableSquares(pos, excludeCurrent = false) {
     if (!inBounds(r, c)) return false;
     // Can't step onto a square attacked by any White piece.
     if (whiteAttacks[r][c]) return false;
-    // Can't step onto a White piece's square (unless it's undefended — but
-    // undefended White pieces are already not in whiteAttacks, so we check occupancy).
     const piece = board[r][c];
-    if (piece && colorOf(piece) === 'w') {
-      // White king: always excluded (always in whiteAttacks by its own king? no,
-      // a king doesn't attack its own square). But king can't be captured — exclude.
-      if (piece === 'K') return false;
-      // Rook/queen: can be captured only if undefended (not in whiteAttacks).
-      // Already passes the whiteAttacks check, so allow capture.
-      return true;
-    }
+    // Treat ALL White pieces' squares as walls for territory purposes.
+    // Even an undefended rook/queen is a barrier — the whole point of training
+    // is to see "the box," not to count squares reachable by capturing.
+    if (piece && colorOf(piece) === 'w') return false;
     return true;
   };
 
